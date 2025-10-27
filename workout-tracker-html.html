@@ -1,566 +1,424 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Workout Tracker</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/recharts@2.5.0/dist/Recharts.js"></script>
-    <script src="https://unpkg.com/lucide-react@0.263.1/dist/umd/lucide-react.js"></script>
-</head>
-<body>
-    <div id="root"></div>
+import React, { useState, useEffect } from 'react';
+import { Plus, Trash2, Dumbbell, TrendingUp, Calendar, X, Download, Upload } from 'lucide-react';
+
+export default function WorkoutTracker() {
+  const [workouts, setWorkouts] = useState([]);
+  const [showAddWorkout, setShowAddWorkout] = useState(false);
+  const [currentWorkout, setCurrentWorkout] = useState({
+    date: new Date().toISOString().split('T')[0],
+    exercises: []
+  });
+  const [view, setView] = useState('add'); // 'add', 'history', 'stats'
+
+  useEffect(() => {
+    loadWorkouts();
+  }, []);
+
+  const loadWorkouts = async () => {
+    try {
+      const result = await window.storage.get('workouts');
+      if (result) {
+        setWorkouts(JSON.parse(result.value));
+      }
+    } catch (error) {
+      console.log('No workouts found yet');
+    }
+  };
+
+  const saveWorkouts = async (updatedWorkouts) => {
+    try {
+      await window.storage.set('workouts', JSON.stringify(updatedWorkouts));
+      setWorkouts(updatedWorkouts);
+    } catch (error) {
+      console.error('Error saving workouts:', error);
+    }
+  };
+
+  const addExercise = () => {
+    setCurrentWorkout({
+      ...currentWorkout,
+      exercises: [
+        ...currentWorkout.exercises,
+        { name: '', sets: [{ reps: '', weight: '' }] }
+      ]
+    });
+  };
+
+  const updateExercise = (exerciseIndex, field, value) => {
+    const updated = { ...currentWorkout };
+    updated.exercises[exerciseIndex][field] = value;
+    setCurrentWorkout(updated);
+  };
+
+  const addSet = (exerciseIndex) => {
+    const updated = { ...currentWorkout };
+    updated.exercises[exerciseIndex].sets.push({ reps: '', weight: '' });
+    setCurrentWorkout(updated);
+  };
+
+  const updateSet = (exerciseIndex, setIndex, field, value) => {
+    const updated = { ...currentWorkout };
+    updated.exercises[exerciseIndex].sets[setIndex][field] = value;
+    setCurrentWorkout(updated);
+  };
+
+  const removeSet = (exerciseIndex, setIndex) => {
+    const updated = { ...currentWorkout };
+    updated.exercises[exerciseIndex].sets.splice(setIndex, 1);
+    setCurrentWorkout(updated);
+  };
+
+  const removeExercise = (exerciseIndex) => {
+    const updated = { ...currentWorkout };
+    updated.exercises.splice(exerciseIndex, 1);
+    setCurrentWorkout(updated);
+  };
+
+  const saveWorkout = async () => {
+    if (currentWorkout.exercises.length === 0) return;
     
-    <script type="text/babel">
-        const { useState, useEffect } = React;
-        const { Plus, TrendingUp, Dumbbell, Calendar, Award, ChevronRight, X } = lucideReact;
-        const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = Recharts;
+    const newWorkout = {
+      ...currentWorkout,
+      id: Date.now(),
+      timestamp: new Date().toISOString()
+    };
+    
+    const updated = [newWorkout, ...workouts];
+    await saveWorkouts(updated);
+    
+    setCurrentWorkout({
+      date: new Date().toISOString().split('T')[0],
+      exercises: []
+    });
+    setShowAddWorkout(false);
+  };
 
-        const WorkoutTracker = () => {
-          const [currentView, setCurrentView] = useState('home');
-          const [workouts, setWorkouts] = useState([]);
-          const [exercises, setExercises] = useState([]);
-          const [selectedWorkout, setSelectedWorkout] = useState(null);
-          const [selectedExercise, setSelectedExercise] = useState(null);
-          const [manualPRs, setManualPRs] = useState({});
-          const [editingPR, setEditingPR] = useState(null);
+  const deleteWorkout = async (id) => {
+    const updated = workouts.filter(w => w.id !== id);
+    await saveWorkouts(updated);
+  };
 
-          // Key exercises for 1RM tracking
-          const prExercises = ['Bench Press', 'Pull Ups', 'Dips', 'Push Ups', 'Squat', 'Dead Lift'];
+  const getExerciseStats = () => {
+    const stats = {};
+    workouts.forEach(workout => {
+      workout.exercises.forEach(exercise => {
+        if (!stats[exercise.name]) {
+          stats[exercise.name] = { count: 0, totalVolume: 0, maxWeight: 0 };
+        }
+        stats[exercise.name].count++;
+        exercise.sets.forEach(set => {
+          const volume = (parseFloat(set.reps) || 0) * (parseFloat(set.weight) || 0);
+          stats[exercise.name].totalVolume += volume;
+          stats[exercise.name].maxWeight = Math.max(stats[exercise.name].maxWeight, parseFloat(set.weight) || 0);
+        });
+      });
+    });
+    return stats;
+  };
 
-          // Initialize with some default exercises
-          useEffect(() => {
-            const defaultExercises = [
-              // Push - Chest
-              { name: 'Bench Press', category: 'Push', subCategory: 'Chest', isPR: true },
-              { name: 'Incline Bench Press', category: 'Push', subCategory: 'Chest', isPR: false },
-              { name: 'My Chest Exercise', category: 'Push', subCategory: 'Chest', isPR: false },
-              { name: 'Dumbell Bench', category: 'Push', subCategory: 'Chest', isPR: false },
-              { name: 'Dips', category: 'Push', subCategory: 'Chest', isPR: true },
-              { name: 'Pec Deck', category: 'Push', subCategory: 'Chest', isPR: false },
-              { name: 'Deficit Push Ups', category: 'Push', subCategory: 'Chest', isPR: false },
-              { name: 'Incline Push Ups', category: 'Push', subCategory: 'Chest', isPR: false },
-              // Push - Triceps
-              { name: 'Overhead Extensions', category: 'Push', subCategory: 'Triceps', isPR: false },
-              { name: 'Push Downs', category: 'Push', subCategory: 'Triceps', isPR: false },
-              { name: 'Push Ups', category: 'Push', subCategory: 'Triceps', isPR: true },
-              { name: 'Skull Crusher', category: 'Push', subCategory: 'Triceps', isPR: false },
-              { name: 'Triceps Kickbacks', category: 'Push', subCategory: 'Triceps', isPR: false },
-              // Push - Shoulder
-              { name: 'Shoulder Press', category: 'Push', subCategory: 'Shoulder', isPR: false },
-              { name: 'Lateral Raise', category: 'Push', subCategory: 'Shoulder', isPR: false },
-              // Pull - Back
-              { name: 'Pull Ups', category: 'Pull', subCategory: 'Back', isPR: true },
-              { name: 'Pull Down', category: 'Pull', subCategory: 'Back', isPR: false },
-              { name: 'Rows', category: 'Pull', subCategory: 'Back', isPR: false },
-              { name: 'Death Rows', category: 'Pull', subCategory: 'Back', isPR: false },
-              { name: 'Lower Back Extension', category: 'Pull', subCategory: 'Back', isPR: false },
-              { name: 'Chest Supported Rows', category: 'Pull', subCategory: 'Back', isPR: false },
-              { name: 'Shrugs', category: 'Pull', subCategory: 'Back', isPR: false },
-              { name: 'Reverse Cable Flys', category: 'Pull', subCategory: 'Back', isPR: false },
-              { name: 'Reverse Pec', category: 'Pull', subCategory: 'Back', isPR: false },
-              { name: 'Face Pulls', category: 'Pull', subCategory: 'Back', isPR: false },
-              { name: 'Pull Over', category: 'Pull', subCategory: 'Back', isPR: false },
-              // Pull - Biceps
-              { name: 'EZ Bar Curl', category: 'Pull', subCategory: 'Biceps', isPR: false },
-              { name: 'Curl', category: 'Pull', subCategory: 'Biceps', isPR: false },
-              { name: 'Preacher Curl Machine', category: 'Pull', subCategory: 'Biceps', isPR: false },
-              { name: 'Hammer Curl', category: 'Pull', subCategory: 'Biceps', isPR: false },
-              { name: 'Reverse Curl', category: 'Pull', subCategory: 'Biceps', isPR: false },
-              { name: '21s', category: 'Pull', subCategory: 'Biceps', isPR: false },
-              // Legs - Quads
-              { name: 'Squat', category: 'Legs', subCategory: 'Quads', isPR: true },
-              { name: 'Leg Press', category: 'Legs', subCategory: 'Quads', isPR: true },
-              { name: 'Leg Extensions', category: 'Legs', subCategory: 'Quads', isPR: false },
-              // Legs - Hamstrings
-              { name: 'Dead Lift', category: 'Legs', subCategory: 'Hamstrings', isPR: true },
-              { name: 'Romanian Dead Lift', category: 'Legs', subCategory: 'Hamstrings', isPR: false },
-              { name: 'Leg Curl', category: 'Legs', subCategory: 'Hamstrings', isPR: false },
-              { name: 'Hip Press', category: 'Legs', subCategory: 'Hamstrings', isPR: false },
-              // Legs - Inner
-              { name: 'Leg Closes', category: 'Legs', subCategory: 'Inner', isPR: false },
-              // Legs - Calves
-              { name: 'Calf Raises', category: 'Legs', subCategory: 'Calves', isPR: false },
-              // Abs
-              { name: 'Full Leg Raises', category: 'Abs', isPR: false },
-              { name: 'Leg Raises', category: 'Abs', isPR: false },
-              { name: 'Half Dragon Flys', category: 'Abs', isPR: false },
-              { name: 'Decline Crunches', category: 'Abs', isPR: false },
-              { name: 'Crunches', category: 'Abs', isPR: false },
-              { name: 'L-Sit', category: 'Abs', isPR: false },
-              // Running
-              { name: 'Jogging', category: 'Running', isRunning: true, isPR: false },
-              { name: 'Sprints', category: 'Running', isRunning: true, isPR: false },
-            ];
-            setExercises(defaultExercises);
-          }, []);
+  const exportBackup = () => {
+    const backup = {
+      version: '1.0',
+      exportDate: new Date().toISOString(),
+      workouts: workouts
+    };
+    
+    const dataStr = JSON.stringify(backup, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `workout-backup-${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
-          const addWorkout = (category) => {
-            const newWorkout = {
-              id: Date.now(),
-              date: new Date().toISOString(),
-              category,
-              exercises: []
-            };
-            setSelectedWorkout(newWorkout);
-            setCurrentView('workout');
-          };
+  const importBackup = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
 
-          const addExerciseToWorkout = (exerciseName, isRunning = false) => {
-            const newExercise = {
-              id: Date.now(),
-              name: exerciseName,
-              totalSets: 0,
-              bestSet: { reps: 0, weight: 0, form: 'Ok' },
-              isRunning: isRunning,
-              distance: isRunning ? 0 : undefined,
-              time: isRunning ? 0 : undefined
-            };
-            setSelectedWorkout({
-              ...selectedWorkout,
-              exercises: [...selectedWorkout.exercises, newExercise]
-            });
-          };
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const backup = JSON.parse(e.target.result);
+        
+        if (!backup.workouts || !Array.isArray(backup.workouts)) {
+          alert('Ungültiges Backup-Format!');
+          return;
+        }
 
-          const updateExerciseData = (exerciseId, field, value) => {
-            setSelectedWorkout({
-              ...selectedWorkout,
-              exercises: selectedWorkout.exercises.map(ex =>
-                ex.id === exerciseId
-                  ? field.includes('bestSet.')
-                    ? { ...ex, bestSet: { ...ex.bestSet, [field.split('.')[1]]: value } }
-                    : { ...ex, [field]: value }
-                  : ex
-              )
-            });
-          };
+        const confirmed = confirm(
+          `Backup vom ${new Date(backup.exportDate).toLocaleDateString('de-DE')}\n` +
+          `${backup.workouts.length} Workouts gefunden.\n\n` +
+          `Möchtest du deine aktuellen Daten ersetzen oder hinzufügen?\n\n` +
+          `OK = Ersetzen | Abbrechen = Hinzufügen`
+        );
 
-          const saveWorkout = () => {
-            setWorkouts([...workouts, selectedWorkout]);
-            setSelectedWorkout(null);
-            setCurrentView('home');
-          };
+        let updatedWorkouts;
+        if (confirmed) {
+          updatedWorkouts = backup.workouts;
+        } else {
+          const existingIds = new Set(workouts.map(w => w.id));
+          const newWorkouts = backup.workouts.filter(w => !existingIds.has(w.id));
+          updatedWorkouts = [...workouts, ...newWorkouts];
+        }
 
-          const getExerciseHistory = (exerciseName) => {
-            return workouts
-              .filter(w => w.exercises.some(e => e.name === exerciseName))
-              .map(w => ({
-                date: new Date(w.date).toLocaleDateString(),
-                weight: w.exercises.find(e => e.name === exerciseName)?.bestSet.weight || 0,
-                reps: w.exercises.find(e => e.name === exerciseName)?.bestSet.reps || 0,
-                volume: (w.exercises.find(e => e.name === exerciseName)?.bestSet.weight || 0) * 
-                        (w.exercises.find(e => e.name === exerciseName)?.bestSet.reps || 0)
-              }))
-              .filter(d => d.weight > 0);
-          };
+        await saveWorkouts(updatedWorkouts);
+        alert(`Erfolgreich ${updatedWorkouts.length} Workouts importiert!`);
+        
+      } catch (error) {
+        console.error('Import error:', error);
+        alert('Fehler beim Importieren der Backup-Datei!');
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  };
 
-          const getPRForExercise = (exerciseName) => {
-            if (manualPRs[exerciseName]) {
-              return manualPRs[exerciseName];
-            }
-            
-            const history = getExerciseHistory(exerciseName);
-            if (history.length === 0) return null;
-            
-            const maxWeight = Math.max(...history.map(h => h.weight));
-            const bestWorkout = history.find(h => h.weight === maxWeight);
-            
-            return {
-              weight: maxWeight,
-              reps: bestWorkout?.reps || 0,
-              date: bestWorkout?.date || ''
-            };
-          };
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      <div className="max-w-4xl mx-auto p-4 sm:p-6">
+        {/* Header */}
+        <div className="text-center mb-8 pt-8">
+          <div className="flex items-center justify-center gap-3 mb-2">
+            <Dumbbell className="w-10 h-10 text-purple-400" />
+            <h1 className="text-4xl font-bold text-white">Workout Tracker</h1>
+          </div>
+          <p className="text-purple-200">Verfolge deine Fortschritte</p>
+        </div>
 
-          const updateManualPR = (exerciseName, field, value) => {
-            setManualPRs({
-              ...manualPRs,
-              [exerciseName]: {
-                ...(manualPRs[exerciseName] || { weight: 0, reps: 0, date: new Date().toISOString().split('T')[0] }),
-                [field]: value
-              }
-            });
-          };
+        {/* Navigation */}
+        <div className="flex gap-2 mb-6 bg-slate-800/50 backdrop-blur p-2 rounded-xl">
+          <button
+            onClick={() => setView('add')}
+            className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all ${
+              view === 'add'
+                ? 'bg-purple-600 text-white shadow-lg'
+                : 'text-purple-200 hover:bg-slate-700/50'
+            }`}
+          >
+            <Plus className="w-5 h-5 inline mr-2" />
+            Workout
+          </button>
+          <button
+            onClick={() => setView('history')}
+            className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all ${
+              view === 'history'
+                ? 'bg-purple-600 text-white shadow-lg'
+                : 'text-purple-200 hover:bg-slate-700/50'
+            }`}
+          >
+            <Calendar className="w-5 h-5 inline mr-2" />
+            Historie
+          </button>
+          <button
+            onClick={() => setView('stats')}
+            className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all ${
+              view === 'stats'
+                ? 'bg-purple-600 text-white shadow-lg'
+                : 'text-purple-200 hover:bg-slate-700/50'
+            }`}
+          >
+            <TrendingUp className="w-5 h-5 inline mr-2" />
+            Stats
+          </button>
+        </div>
 
-          // Home View
-          if (currentView === 'home') {
-            return (
-              <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4">
-                <div className="max-w-md mx-auto">
-                  <div className="text-center mb-8 pt-4">
-                    <Dumbbell className="w-12 h-12 mx-auto mb-2 text-blue-400" />
-                    <h1 className="text-3xl font-bold">Workout Tracker</h1>
-                    <p className="text-slate-400 mt-1">Track your progress</p>
-                  </div>
+        {/* Backup Buttons */}
+        <div className="flex gap-2 mb-6">
+          <button
+            onClick={exportBackup}
+            className="flex-1 py-3 px-4 bg-green-600/20 hover:bg-green-600/30 text-green-300 rounded-lg transition-colors font-medium border border-green-600/30"
+          >
+            <Download className="w-5 h-5 inline mr-2" />
+            Backup erstellen
+          </button>
+          <label className="flex-1">
+            <input
+              type="file"
+              accept=".json"
+              onChange={importBackup}
+              className="hidden"
+            />
+            <div className="py-3 px-4 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 rounded-lg transition-colors font-medium border border-blue-600/30 text-center cursor-pointer">
+              <Upload className="w-5 h-5 inline mr-2" />
+              Backup wiederherstellen
+            </div>
+          </label>
+        </div>
 
-                  <div className="space-y-3 mb-6">
-                    <button
-                      onClick={() => addWorkout('Push')}
-                      className="w-full bg-gradient-to-r from-red-500 to-pink-500 p-4 rounded-xl flex items-center justify-between shadow-lg"
-                    >
-                      <span className="text-lg font-semibold">Push Day</span>
-                      <Plus className="w-6 h-6" />
-                    </button>
-                    <button
-                      onClick={() => addWorkout('Pull')}
-                      className="w-full bg-gradient-to-r from-blue-500 to-cyan-500 p-4 rounded-xl flex items-center justify-between shadow-lg"
-                    >
-                      <span className="text-lg font-semibold">Pull Day</span>
-                      <Plus className="w-6 h-6" />
-                    </button>
-                    <button
-                      onClick={() => addWorkout('Legs')}
-                      className="w-full bg-gradient-to-r from-green-500 to-emerald-500 p-4 rounded-xl flex items-center justify-between shadow-lg"
-                    >
-                      <span className="text-lg font-semibold">Leg Day</span>
-                      <Plus className="w-6 h-6" />
-                    </button>
-                    <button
-                      onClick={() => addWorkout('Abs')}
-                      className="w-full bg-gradient-to-r from-purple-500 to-indigo-500 p-4 rounded-xl flex items-center justify-between shadow-lg"
-                    >
-                      <span className="text-lg font-semibold">Abs</span>
-                      <Plus className="w-6 h-6" />
-                    </button>
-                    <button
-                      onClick={() => addWorkout('Running')}
-                      className="w-full bg-gradient-to-r from-amber-500 to-orange-500 p-4 rounded-xl flex items-center justify-between shadow-lg"
-                    >
-                      <span className="text-lg font-semibold">Running</span>
-                      <Plus className="w-6 h-6" />
-                    </button>
-                  </div>
+        {/* Add Workout View */}
+        {view === 'add' && (
+          <div className="bg-slate-800/50 backdrop-blur rounded-2xl p-6 shadow-2xl">
+            <div className="mb-6">
+              <label className="block text-purple-200 mb-2 font-medium">Datum</label>
+              <input
+                type="date"
+                value={currentWorkout.date}
+                onChange={(e) => setCurrentWorkout({ ...currentWorkout, date: e.target.value })}
+                className="w-full px-4 py-3 bg-slate-700/50 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
 
-                  <div className="bg-slate-800 rounded-xl p-4 mb-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-xl font-semibold flex items-center gap-2">
-                        <Award className="w-5 h-5 text-yellow-400" />
-                        Personal Records
-                      </h2>
-                    </div>
-                    <div className="space-y-2">
-                      {prExercises.map(ex => {
-                        const pr = getPRForExercise(ex);
-                        const isEditing = editingPR === ex;
-                        
-                        return (
-                          <div key={ex} className="bg-slate-700 p-3 rounded-lg">
-                            {isEditing ? (
-                              <div className="space-y-2">
-                                <div className="font-semibold text-sm mb-2">{ex}</div>
-                                <div className="grid grid-cols-3 gap-2">
-                                  <div>
-                                    <label className="text-xs text-slate-400 block mb-1">Weight (kg)</label>
-                                    <input
-                                      type="number"
-                                      step="0.5"
-                                      placeholder="0"
-                                      value={pr?.weight || ''}
-                                      onChange={(e) => updateManualPR(ex, 'weight', parseFloat(e.target.value) || 0)}
-                                      className="w-full bg-slate-600 p-2 rounded text-sm"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="text-xs text-slate-400 block mb-1">Reps</label>
-                                    <input
-                                      type="number"
-                                      placeholder="0"
-                                      value={pr?.reps || ''}
-                                      onChange={(e) => updateManualPR(ex, 'reps', parseInt(e.target.value) || 0)}
-                                      className="w-full bg-slate-600 p-2 rounded text-sm"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="text-xs text-slate-400 block mb-1">Date</label>
-                                    <input
-                                      type="date"
-                                      value={pr?.date || new Date().toISOString().split('T')[0]}
-                                      onChange={(e) => updateManualPR(ex, 'date', e.target.value)}
-                                      className="w-full bg-slate-600 p-2 rounded text-sm"
-                                    />
-                                  </div>
-                                </div>
-                                <button
-                                  onClick={() => setEditingPR(null)}
-                                  className="w-full bg-green-600 p-2 rounded text-sm mt-2"
-                                >
-                                  Done
-                                </button>
-                              </div>
-                            ) : (
-                              <div 
-                                onClick={() => setEditingPR(ex)}
-                                className="cursor-pointer"
-                              >
-                                <div className="flex justify-between items-center">
-                                  <span className="text-sm">{ex}</span>
-                                  <span className="font-bold text-yellow-400">
-                                    {pr ? `${pr.weight} kg` : 'No data'}
-                                  </span>
-                                </div>
-                                {pr && pr.reps > 0 && (
-                                  <div className="text-xs text-slate-400 mt-1">
-                                    {pr.reps} reps {pr.date && `• ${new Date(pr.date).toLocaleDateString()}`}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
+            {currentWorkout.exercises.map((exercise, exerciseIndex) => (
+              <div key={exerciseIndex} className="mb-6 bg-slate-700/30 rounded-xl p-4 border border-slate-600">
+                <div className="flex gap-2 mb-4">
+                  <input
+                    type="text"
+                    placeholder="Übungsname (z.B. Bankdrücken)"
+                    value={exercise.name}
+                    onChange={(e) => updateExercise(exerciseIndex, 'name', e.target.value)}
+                    className="flex-1 px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
                   <button
-                    onClick={() => setCurrentView('progress')}
-                    className="w-full bg-slate-700 p-4 rounded-xl flex items-center justify-between"
+                    onClick={() => removeExercise(exerciseIndex)}
+                    className="px-4 py-3 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors"
                   >
-                    <span className="text-lg font-semibold flex items-center gap-2">
-                      <TrendingUp className="w-5 h-5" />
-                      View Progress Charts
-                    </span>
-                    <ChevronRight className="w-6 h-6" />
+                    <Trash2 className="w-5 h-5" />
                   </button>
+                </div>
 
-                  {workouts.length > 0 && (
-                    <div className="mt-6">
-                      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                        <Calendar className="w-5 h-5" />
-                        Recent Workouts
-                      </h3>
-                      <div className="space-y-2">
-                        {workouts.slice(-5).reverse().map(w => (
-                          <div key={w.id} className="bg-slate-700 p-3 rounded-lg">
-                            <div className="flex justify-between items-center">
-                              <span className="font-semibold">{w.category}</span>
-                              <span className="text-sm text-slate-400">
-                                {new Date(w.date).toLocaleDateString()}
-                              </span>
-                            </div>
-                            <div className="text-sm text-slate-400 mt-1">
-                              {w.exercises.length} exercises
-                            </div>
+                <div className="space-y-2">
+                  {exercise.sets.map((set, setIndex) => (
+                    <div key={setIndex} className="flex gap-2 items-center">
+                      <span className="text-purple-300 font-medium w-16">Satz {setIndex + 1}</span>
+                      <input
+                        type="number"
+                        placeholder="Wdh"
+                        value={set.reps}
+                        onChange={(e) => updateSet(exerciseIndex, setIndex, 'reps', e.target.value)}
+                        className="w-24 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                      <input
+                        type="number"
+                        step="0.5"
+                        placeholder="Gewicht (kg)"
+                        value={set.weight}
+                        onChange={(e) => updateSet(exerciseIndex, setIndex, 'weight', e.target.value)}
+                        className="flex-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                      {exercise.sets.length > 1 && (
+                        <button
+                          onClick={() => removeSet(exerciseIndex, setIndex)}
+                          className="px-3 py-2 text-red-400 hover:bg-red-600/20 rounded-lg transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => addSet(exerciseIndex)}
+                  className="mt-3 w-full py-2 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 rounded-lg transition-colors font-medium"
+                >
+                  + Satz hinzufügen
+                </button>
+              </div>
+            ))}
+
+            <div className="flex gap-3">
+              <button
+                onClick={addExercise}
+                className="flex-1 py-3 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 rounded-lg transition-colors font-medium"
+              >
+                + Übung hinzufügen
+              </button>
+              {currentWorkout.exercises.length > 0 && (
+                <button
+                  onClick={saveWorkout}
+                  className="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors font-medium shadow-lg"
+                >
+                  Workout speichern
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* History View */}
+        {view === 'history' && (
+          <div className="space-y-4">
+            {workouts.length === 0 ? (
+              <div className="text-center py-12 bg-slate-800/50 backdrop-blur rounded-2xl">
+                <Calendar className="w-16 h-16 text-slate-600 mx-auto mb-4" />
+                <p className="text-slate-400 text-lg">Noch keine Workouts vorhanden</p>
+              </div>
+            ) : (
+              workouts.map((workout) => (
+                <div key={workout.id} className="bg-slate-800/50 backdrop-blur rounded-2xl p-6 shadow-xl">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h3 className="text-xl font-bold text-white">{new Date(workout.date).toLocaleDateString('de-DE')}</h3>
+                      <p className="text-purple-300 text-sm">{workout.exercises.length} Übungen</p>
+                    </div>
+                    <button
+                      onClick={() => deleteWorkout(workout.id)}
+                      className="px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                  {workout.exercises.map((exercise, idx) => (
+                    <div key={idx} className="mb-3 last:mb-0 bg-slate-700/30 rounded-lg p-4">
+                      <h4 className="font-semibold text-purple-200 mb-2">{exercise.name}</h4>
+                      <div className="space-y-1">
+                        {exercise.sets.map((set, setIdx) => (
+                          <div key={setIdx} className="text-slate-300 text-sm">
+                            Satz {setIdx + 1}: {set.reps} Wdh × {set.weight} kg
                           </div>
                         ))}
                       </div>
                     </div>
-                  )}
+                  ))}
                 </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* Stats View */}
+        {view === 'stats' && (
+          <div className="bg-slate-800/50 backdrop-blur rounded-2xl p-6 shadow-2xl">
+            <h2 className="text-2xl font-bold text-white mb-6">Statistiken</h2>
+            {workouts.length === 0 ? (
+              <div className="text-center py-12">
+                <TrendingUp className="w-16 h-16 text-slate-600 mx-auto mb-4" />
+                <p className="text-slate-400 text-lg">Keine Daten vorhanden</p>
               </div>
-            );
-          }
-
-          // Workout View
-          if (currentView === 'workout') {
-            const availableExercises = exercises.filter(e => 
-              e.category === selectedWorkout.category
-            );
-
-            const groupedExercises = {};
-            availableExercises.forEach(ex => {
-              if (ex.subCategory) {
-                if (!groupedExercises[ex.subCategory]) {
-                  groupedExercises[ex.subCategory] = [];
-                }
-                groupedExercises[ex.subCategory].push(ex);
-              } else {
-                if (!groupedExercises['Other']) {
-                  groupedExercises['Other'] = [];
-                }
-                groupedExercises['Other'].push(ex);
-              }
-            });
-
-            return (
-              <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4">
-                <div className="max-w-md mx-auto">
-                  <div className="flex items-center justify-between mb-6 pt-4">
-                    <h1 className="text-2xl font-bold">{selectedWorkout.category} Workout</h1>
-                    <button onClick={() => setCurrentView('home')} className="text-slate-400">
-                      <X className="w-6 h-6" />
-                    </button>
-                  </div>
-
-                  <div className="mb-6">
-                    <h3 className="text-lg font-semibold mb-3">Add Exercise</h3>
-                    {Object.keys(groupedExercises).map(subCat => (
-                      <div key={subCat} className="mb-4">
-                        {subCat !== 'Other' && (
-                          <h4 className="text-sm text-slate-400 mb-2 font-semibold">{subCat}</h4>
-                        )}
-                        <div className="grid grid-cols-2 gap-2">
-                          {groupedExercises[subCat].map(ex => (
-                            <button
-                              key={ex.name}
-                              onClick={() => addExerciseToWorkout(ex.name, ex.isRunning)}
-                              className="bg-slate-700 p-3 rounded-lg text-sm hover:bg-slate-600"
-                            >
-                              {ex.name}
-                            </button>
-                          ))}
-                        </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="bg-slate-700/30 rounded-xl p-4 border border-slate-600">
+                  <h3 className="text-purple-200 font-semibold mb-2">Gesamt</h3>
+                  <p className="text-white text-3xl font-bold">{workouts.length}</p>
+                  <p className="text-slate-400 text-sm">Workouts absolviert</p>
+                </div>
+                
+                {Object.entries(getExerciseStats()).map(([name, stats]) => (
+                  <div key={name} className="bg-slate-700/30 rounded-xl p-4 border border-slate-600">
+                    <h3 className="text-purple-200 font-semibold mb-3">{name}</h3>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <p className="text-slate-400 text-sm">Anzahl</p>
+                        <p className="text-white text-xl font-bold">{stats.count}×</p>
                       </div>
-                    ))}
-                  </div>
-
-                  {selectedWorkout.exercises.length > 0 && (
-                    <div className="space-y-4 mb-6">
-                      <h3 className="text-lg font-semibold">Today's Exercises</h3>
-                      {selectedWorkout.exercises.map(ex => (
-                        <div key={ex.id} className="bg-slate-700 p-4 rounded-xl">
-                          <h4 className="font-semibold mb-3">{ex.name}</h4>
-                          
-                          {ex.isRunning ? (
-                            <div className="space-y-3">
-                              <div>
-                                <label className="text-sm text-slate-400 block mb-1">Distance (km)</label>
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  placeholder="0"
-                                  value={ex.distance || ''}
-                                  onChange={(e) => updateExerciseData(ex.id, 'distance', parseFloat(e.target.value) || 0)}
-                                  className="w-full bg-slate-600 p-2 rounded-lg"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-sm text-slate-400 block mb-1">Time (minutes)</label>
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  placeholder="0"
-                                  value={ex.time || ''}
-                                  onChange={(e) => updateExerciseData(ex.id, 'time', parseFloat(e.target.value) || 0)}
-                                  className="w-full bg-slate-600 p-2 rounded-lg"
-                                />
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="space-y-3">
-                              <div>
-                                <label className="text-sm text-slate-400 block mb-1">Total Sets</label>
-                                <input
-                                  type="number"
-                                  value={ex.totalSets}
-                                  onChange={(e) => updateExerciseData(ex.id, 'totalSets', parseInt(e.target.value) || 0)}
-                                  className="w-full bg-slate-600 p-2 rounded-lg"
-                                />
-                              </div>
-                              
-                              <div className="border-t border-slate-600 pt-3">
-                                <p className="text-sm text-slate-400 mb-2">Best Set</p>
-                                <div className="grid grid-cols-3 gap-2">
-                                  <div>
-                                    <label className="text-xs text-slate-400 block mb-1">Reps</label>
-                                    <input
-                                      type="number"
-                                      placeholder="0"
-                                      value={ex.bestSet.reps || ''}
-                                      onChange={(e) => updateExerciseData(ex.id, 'bestSet.reps', parseInt(e.target.value) || 0)}
-                                      className="w-full bg-slate-600 p-2 rounded-lg"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="text-xs text-slate-400 block mb-1">Weight (kg)</label>
-                                    <input
-                                      type="number"
-                                      step="0.5"
-                                      placeholder="0"
-                                      value={ex.bestSet.weight || ''}
-                                      onChange={(e) => updateExerciseData(ex.id, 'bestSet.weight', parseFloat(e.target.value) || 0)}
-                                      className="w-full bg-slate-600 p-2 rounded-lg"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="text-xs text-slate-400 block mb-1">Form</label>
-                                    <select
-                                      value={ex.bestSet.form}
-                                      onChange={(e) => updateExerciseData(ex.id, 'bestSet.form', e.target.value)}
-                                      className="w-full bg-slate-600 p-2 rounded-lg"
-                                    >
-                                      <option>Very Good</option>
-                                      <option>Ok</option>
-                                    </select>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                      <div>
+                        <p className="text-slate-400 text-sm">Max Gewicht</p>
+                        <p className="text-white text-xl font-bold">{stats.maxWeight} kg</p>
+                      </div>
+                      <div>
+                        <p className="text-slate-400 text-sm">Volumen</p>
+                        <p className="text-white text-xl font-bold">{Math.round(stats.totalVolume)} kg</p>
+                      </div>
                     </div>
-                  )}
-
-                  {selectedWorkout.exercises.length > 0 && (
-                    <button
-                      onClick={saveWorkout}
-                      className="w-full bg-green-600 p-4 rounded-xl font-semibold text-lg"
-                    >
-                      Save Workout
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          }
-
-          // Progress View
-          if (currentView === 'progress') {
-            return (
-              <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4">
-                <div className="max-w-4xl mx-auto">
-                  <div className="flex items-center justify-between mb-6 pt-4">
-                    <h1 className="text-2xl font-bold">Progress Charts</h1>
-                    <button onClick={() => setCurrentView('home')} className="text-slate-400">
-                      <X className="w-6 h-6" />
-                    </button>
                   </div>
-
-                  <div className="mb-6">
-                    <label className="text-sm text-slate-400 block mb-2">Select Exercise</label>
-                    <select
-                      value={selectedExercise || ''}
-                      onChange={(e) => setSelectedExercise(e.target.value)}
-                      className="w-full bg-slate-700 p-3 rounded-lg"
-                    >
-                      <option value="">Choose an exercise...</option>
-                      {exercises.map(ex => (
-                        <option key={ex.name} value={ex.name}>{ex.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {selectedExercise && (
-                    <div className="bg-slate-800 p-6 rounded-xl">
-                      <h2 className="text-xl font-semibold mb-4">{selectedExercise} Progress</h2>
-                      {getExerciseHistory(selectedExercise).length > 0 ? (
-                        <ResponsiveContainer width="100%" height={300}>
-                          <LineChart data={getExerciseHistory(selectedExercise)}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                            <XAxis dataKey="date" stroke="#9ca3af" />
-                            <YAxis stroke="#9ca3af" />
-                            <Tooltip
-                              contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }}
-                            />
-                            <Line type="monotone" dataKey="weight" stroke="#3b82f6" strokeWidth={2} name="Weight (kg)" />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <p className="text-slate-400 text-center py-8">No data yet. Start tracking this exercise!</p>
-                      )}
-                    </div>
-                  )}
-                </div>
+                ))}
               </div>
-            );
-          }
-        };
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<WorkoutTracker />);
-    </script>
-</body>
-</html>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
